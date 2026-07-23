@@ -282,3 +282,5 @@ All Rights Reserved — © Bereeze Footwear Development Team.
 *(Update this section with your preferred open-source license — e.g. MIT, Apache 2.0 — if you plan to make the repository public and open for contributions.)*
 
 
+#   B E R E E Z E - F O O T W E A R - F N A C Y -  
+ 
