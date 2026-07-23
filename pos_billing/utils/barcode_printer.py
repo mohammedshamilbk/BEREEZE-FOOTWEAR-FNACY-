@@ -260,11 +260,17 @@ def render_label_image(
     )
 
     store_name = (item.get("store_name") or "BREEZE FOOTWEAR").upper()
-    item_name = str(item.get("item_name") or "Footwear Product")
-    price = float(item.get("selling_price") or 0.0)
-    code = str(item.get("barcode") or item.get("item_code") or "BFF1001")
+    item_code_str = str(item.get("item_code") or "").strip()
+    barcode_str = str(item.get("barcode") or "").strip()
+    item_name_str = str(item.get("item_name") or "Footwear Product").strip()
     size_str = str(item.get("size") or "").strip()
     color_str = str(item.get("color") or "").strip()
+    category_str = str(item.get("category") or "").strip()
+    price = float(item.get("selling_price") or 0.0)
+
+    # Primary code identifier (prefer item_code, fallback to barcode)
+    code_display = item_code_str or barcode_str or "BFF1001"
+    code_for_bars = barcode_str or item_code_str or "BFF1001"
 
     # Outer border
     draw.rectangle([1, 1, label_width - 2, label_height - 2], outline="#000000", width=2)
@@ -277,22 +283,28 @@ def render_label_image(
     bc_height = int(label_height * 0.28)
     bc_width = int(label_width * 0.88)
 
-    bc_img = generate_barcode_image(code=code, scheme=scheme, width=bc_width, height=bc_height)
+    bc_img = generate_barcode_image(code=code_for_bars, scheme=scheme, width=bc_width, height=bc_height)
     bc_x = (label_width - bc_width) // 2
     img.paste(bc_img, (bc_x, bc_top))
 
     # 3. Line 3: Item Code (Left) & Size Number (Right, same font size as item code/name)
     line3_y = int(label_height * 0.50)
-    draw.text((int(label_width * 0.06), line3_y), code, fill="black", font=font_code, anchor="la")
+    draw.text((int(label_width * 0.06), line3_y), code_display, fill="black", font=font_code, anchor="la")
 
     if size_str:
         draw.text((int(label_width * 0.94), line3_y), size_str, fill="black", font=font_code, anchor="ra")
 
-    # 4. Line 4: Item Name / Spec Line (Left)
+    # 4. Line 4: Item Name / Category Spec Line (Left)
     line4_y = int(label_height * 0.68)
-    short_name = (item_name[:32] + "..") if len(item_name) > 34 else item_name
-    if color_str and color_str.lower() not in short_name.lower():
-        short_name += f" ({color_str})"
+    line4_text = item_name_str
+    if line4_text.lower() == code_display.lower() and category_str:
+        line4_text = category_str
+    elif category_str and category_str.lower() not in line4_text.lower():
+        line4_text += f" ({category_str})"
+    if color_str and color_str.lower() not in line4_text.lower():
+        line4_text += f" {color_str}"
+
+    short_name = (line4_text[:32] + "..") if len(line4_text) > 34 else line4_text
     draw.text((int(label_width * 0.06), line4_y), short_name, fill="black", font=font_text, anchor="la")
 
     # 5. Line 5: Price (Bottom Left, Rs. format)
