@@ -212,19 +212,21 @@ def generate_barcode_image(
 # ─────────────────────────────────────────────────────────────
 # 3. Label & Sheet Rendering
 # ─────────────────────────────────────────────────────────────
-def _get_fonts(title_size: int = 18, price_size: int = 22, text_size: int = 13, code_size: int = 14):
+def _get_fonts(title_size: int = 18, price_size: int = 24, text_size: int = 14, code_size: int = 16, size_num_size: int = 34):
     """Retrieve clean fonts with fallback to default."""
     try:
         font_title = ImageFont.truetype("arialbd.ttf", title_size)
         font_price = ImageFont.truetype("arialbd.ttf", price_size)
         font_text = ImageFont.truetype("arial.ttf", text_size)
-        font_code = ImageFont.truetype("courbd.ttf", code_size)
+        font_code = ImageFont.truetype("arialbd.ttf", code_size)
+        font_size_num = ImageFont.truetype("arialbd.ttf", size_num_size)
     except Exception:
         font_title = ImageFont.load_default()
         font_price = ImageFont.load_default()
         font_text = ImageFont.load_default()
         font_code = ImageFont.load_default()
-    return font_title, font_price, font_text, font_code
+        font_size_num = ImageFont.load_default()
+    return font_title, font_price, font_text, font_code, font_size_num
 
 
 def render_label_image(
@@ -234,8 +236,14 @@ def render_label_image(
     label_height: int = 220
 ) -> Image.Image:
     """
-    Render a single retail product label (`PIL.Image`) containing store name,
-    item title, price tag, barcode bars, and product code.
+    Render retail footwear sticker label matching exact physical shop sticker standard:
+    -----------------------------------------------------
+    |               BREEZE FOOTWEAR                     |
+    |  |||||||||||||||||||||||||||||||||||||||||||||||  |
+    |  BFF1356                                    16 |
+    |  QLADY 6491(KPT)7*12                          |
+    |  Rs.849.00                                        |
+    -----------------------------------------------------
     """
     if not Image or not ImageDraw:
         raise ImportError("PIL (Pillow) is required.")
@@ -243,52 +251,54 @@ def render_label_image(
     img = Image.new("RGB", (label_width, label_height), "white")
     draw = ImageDraw.Draw(img)
 
-    font_title, font_price, font_text, font_code = _get_fonts(
-        title_size=max(14, int(label_height * 0.08)),
-        price_size=max(16, int(label_height * 0.10)),
-        text_size=max(11, int(label_height * 0.06)),
-        code_size=max(12, int(label_height * 0.065))
+    font_title, font_price, font_text, font_code, font_size_num = _get_fonts(
+        title_size=max(15, int(label_height * 0.09)),
+        price_size=max(20, int(label_height * 0.13)),
+        text_size=max(11, int(label_height * 0.07)),
+        code_size=max(13, int(label_height * 0.08)),
+        size_num_size=max(28, int(label_height * 0.22))
     )
 
-    store_name = item.get("store_name") or "BEREEZE FOOTWEAR"
-    item_name = str(item.get("item_name") or "Product Label")
+    store_name = (item.get("store_name") or "BREEZE FOOTWEAR").upper()
+    item_name = str(item.get("item_name") or "Footwear Product")
     price = float(item.get("selling_price") or 0.0)
-    code = str(item.get("barcode") or item.get("item_code") or "0000000000")
+    code = str(item.get("barcode") or item.get("item_code") or "BFF1001")
     size_str = str(item.get("size") or "").strip()
     color_str = str(item.get("color") or "").strip()
 
     # Outer border
-    draw.rectangle([1, 1, label_width - 2, label_height - 2], outline="#334155", width=2)
+    draw.rectangle([1, 1, label_width - 2, label_height - 2], outline="#000000", width=2)
 
-    # 1. Header (Store Name)
-    draw.text((label_width // 2, int(label_height * 0.08)), store_name, fill="#0F172A", font=font_title, anchor="mm")
+    # 1. Header (Store Name at Top Center)
+    draw.text((label_width // 2, int(label_height * 0.06)), store_name, fill="black", font=font_title, anchor="mt")
 
-    # 2. Item Name
-    short_name = (item_name[:28] + "..") if len(item_name) > 30 else item_name
-    draw.text((label_width // 2, int(label_height * 0.20)), short_name, fill="#1E293B", font=font_text, anchor="mm")
+    # 2. Barcode Graphic (Upper Middle)
+    bc_top = int(label_height * 0.20)
+    bc_height = int(label_height * 0.28)
+    bc_width = int(label_width * 0.88)
 
-    # 3. Size & Price line
-    badge_text = f"Size: {size_str}" if size_str else ""
-    if color_str:
-        badge_text += f" | {color_str}" if badge_text else f"Color: {color_str}"
-    
-    if badge_text:
-        draw.text((int(label_width * 0.28), int(label_height * 0.34)), badge_text, fill="#475569", font=font_text, anchor="mm")
-        draw.text((int(label_width * 0.75), int(label_height * 0.34)), f"₹ {price:,.2f}", fill="#0D9488", font=font_price, anchor="mm")
-    else:
-        draw.text((label_width // 2, int(label_height * 0.34)), f"PRICE: ₹ {price:,.2f}", fill="#0D9488", font=font_price, anchor="mm")
-
-    # 4. Barcode graphic
-    bc_top = int(label_height * 0.44)
-    bc_height = int(label_height * 0.38)
-    bc_width = int(label_width * 0.82)
-    
     bc_img = generate_barcode_image(code=code, scheme=scheme, width=bc_width, height=bc_height)
     bc_x = (label_width - bc_width) // 2
     img.paste(bc_img, (bc_x, bc_top))
 
-    # 5. Barcode string under bars
-    draw.text((label_width // 2, int(label_height * 0.90)), code, fill="#0F172A", font=font_code, anchor="mm")
+    # 3. Line 3: Item Code (Left) & Big Size Number (Right)
+    line3_y = int(label_height * 0.50)
+    draw.text((int(label_width * 0.06), line3_y), code, fill="black", font=font_code, anchor="la")
+
+    if size_str:
+        draw.text((int(label_width * 0.92), line3_y - 4), size_str, fill="black", font=font_size_num, anchor="ra")
+
+    # 4. Line 4: Item Name / Spec Line (Left)
+    line4_y = int(label_height * 0.68)
+    short_name = (item_name[:32] + "..") if len(item_name) > 34 else item_name
+    if color_str and color_str.lower() not in short_name.lower():
+        short_name += f" ({color_str})"
+    draw.text((int(label_width * 0.06), line4_y), short_name, fill="black", font=font_text, anchor="la")
+
+    # 5. Line 5: Price (Bottom Left, Rs. format)
+    line5_y = int(label_height * 0.82)
+    price_str = f"Rs.{price:,.2f}"
+    draw.text((int(label_width * 0.06), line5_y), price_str, fill="black", font=font_price, anchor="la")
 
     return img
 
