@@ -141,6 +141,46 @@ def generate_upi_qr(
     return img, upi_uri, upi_id
 
 
+def get_receipt_qr_image(
+    payment_mode: str,
+    amount: float,
+    bill_number: str = "",
+    size: tuple[int, int] = (160, 160)
+) -> tuple[Image.Image, str, str]:
+    """
+    Return QR Code image and label text based on payment mode:
+    - CASH / CREDIT: Returns store static QR code asset.
+    - UPI / ONLINE: Generates dynamic UPI QR code with exact pre-filled bill amount.
+    """
+    from PIL import Image
+    pm_upper = str(payment_mode or "").strip().upper()
+
+    if pm_upper in ("UPI", "ONLINE", "GPAY", "PHONEPE", "PAYTM"):
+        img, upi_uri, upi_id = generate_upi_qr(amount=amount, bill_number=bill_number, size=size)
+        lbl_text = f"⚡ Dynamic UPI Invoice QR (Paid ₹ {amount:,.2f})"
+        return img, upi_uri, lbl_text
+
+    # Default / Cash Mode -> Return static store QR code asset
+    cash_asset_paths = [
+        "pos_billing/assets/cash_store_qr.png",
+        "pos_billing/assets/cash_store_qr.jpg",
+        "pos_billing/assets/store_qr.png",
+        "pos_billing/assets/store_qr.jpg"
+    ]
+    for asset_path in cash_asset_paths:
+        if os.path.exists(asset_path):
+            try:
+                img = Image.open(asset_path).convert("RGB")
+                img = img.resize(size, Image.Resampling.LANCZOS)
+                return img, "https://linktr.ee/shamilmohammed926", "📲 Bereeze Store QR Code (Scan for Store Info & Offers)"
+            except Exception as exc:
+                logger.warning("Failed loading static QR asset %s: %s", asset_path, exc)
+
+    # Fallback to dynamic UPI QR if static asset unavailable
+    img, upi_uri, _ = generate_upi_qr(amount=amount, bill_number=bill_number, size=size)
+    return img, upi_uri, "📲 Bereeze Store QR Code"
+
+
 def show_live_upi_dialog(parent: tk.Widget, bill: Bill) -> None:
     """
     Display an interactive modal popup with a large, dynamic UPI QR code

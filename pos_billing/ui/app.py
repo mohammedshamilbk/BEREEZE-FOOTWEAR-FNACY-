@@ -561,15 +561,16 @@ class _ReceiptDlg(tk.Toplevel):
         self._qr_c.delete("all")
         try:
             from PIL import ImageTk
-            from pos_billing.utils.qr_generator import generate_upi_qr
-            img, upi_uri, upi_id = generate_upi_qr(
+            from pos_billing.utils.qr_generator import get_receipt_qr_image
+            img, uri, lbl_text = get_receipt_qr_image(
+                payment_mode=bill.payment_mode,
                 amount=bill.total_amount,
                 bill_number=bill.bill_number,
                 size=(160, 160),
             )
             self._custom_qr_photo = ImageTk.PhotoImage(img)
             self._qr_c.create_image(80, 80, image=self._custom_qr_photo)
-            self._upi_lbl.config(text=f"⚡ Scan to Pay ₹ {bill.total_amount:,.2f} (Exact Amount Pre-set)")
+            self._upi_lbl.config(text=lbl_text)
             self._qr_frm.pack(pady=8)
         except Exception:
             self._qr_frm.pack_forget()
