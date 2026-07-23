@@ -281,12 +281,12 @@ def render_label_image(
     bc_x = (label_width - bc_width) // 2
     img.paste(bc_img, (bc_x, bc_top))
 
-    # 3. Line 3: Item Code (Left) & Big Size Number (Right)
+    # 3. Line 3: Item Code (Left) & Size Number (Right, same font size as item code/name)
     line3_y = int(label_height * 0.50)
     draw.text((int(label_width * 0.06), line3_y), code, fill="black", font=font_code, anchor="la")
 
     if size_str:
-        draw.text((int(label_width * 0.92), line3_y - 4), size_str, fill="black", font=font_size_num, anchor="ra")
+        draw.text((int(label_width * 0.94), line3_y), size_str, fill="black", font=font_code, anchor="ra")
 
     # 4. Line 4: Item Name / Spec Line (Left)
     line4_y = int(label_height * 0.68)
