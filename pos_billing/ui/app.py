@@ -175,9 +175,31 @@ class LoginPage(tk.Frame):
         header.pack(fill=tk.X)
         header.pack_propagate(False)
         
-        tk.Label(header, text="👟", font=("Segoe UI Emoji", 34), bg=PRIMARY_DARK, fg=WHITE).pack(pady=(22, 4))
-        _lbl(header, "BEREEZE FOOTWEAR", font=("Segoe UI", 18, "bold"), fg=WHITE, bg=PRIMARY_DARK).pack()
-        _lbl(header, "Point of Sale Billing System", font=FONT_NORMAL, fg="#CCFBF1", bg=PRIMARY_DARK).pack()
+        # Load and display brand logo image
+        logo_loaded = False
+        try:
+            from PIL import Image, ImageTk
+            logo_path = os.path.join(_root, "pos_billing", "assets", "app_icon.png")
+            if os.path.exists(logo_path):
+                img = Image.open(logo_path).convert("RGBA")
+                # Create clean white-padded logo badge for primary dark header
+                w, h = img.size
+                aspect = w / float(h)
+                target_h = 100
+                target_w = int(target_h * aspect)
+                img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img_resized)
+                lbl_logo = tk.Label(header, image=photo, bg=PRIMARY_DARK)
+                lbl_logo._photo = photo
+                lbl_logo.pack(pady=(16, 4))
+                logo_loaded = True
+        except Exception:
+            logo_loaded = False
+
+        if not logo_loaded:
+            tk.Label(header, text="👟", font=("Segoe UI Emoji", 34), bg=PRIMARY_DARK, fg=WHITE).pack(pady=(22, 4))
+            _lbl(header, "BEREEZE FOOTWEAR", font=("Segoe UI", 18, "bold"), fg=WHITE, bg=PRIMARY_DARK).pack()
+            _lbl(header, "Point of Sale Billing System", font=FONT_NORMAL, fg="#CCFBF1", bg=PRIMARY_DARK).pack()
 
         form = tk.Frame(card, bg=WHITE, padx=44)
         form.pack(fill=tk.BOTH, expand=True, pady=20)
@@ -2007,6 +2029,13 @@ class App(tk.Tk):
         try:
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
+
+        # Apply official Bereeze Footwear Fancy application icon
+        try:
+            from .widgets import apply_app_icon
+            apply_app_icon(self)
         except Exception:
             pass
 

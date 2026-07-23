@@ -57,6 +57,13 @@ class MainFrame(tk.Toplevel):
         self.configure(bg=APP_BACKGROUND)
         self.protocol("WM_DELETE_WINDOW", self._confirm_exit)
 
+        # Apply official Bereeze Footwear Fancy app icon
+        try:
+            from .widgets import apply_app_icon
+            apply_app_icon(self)
+        except Exception:
+            pass
+
         # Launch main app in Full Screen / Maximized state
         try:
             self.state("zoomed")

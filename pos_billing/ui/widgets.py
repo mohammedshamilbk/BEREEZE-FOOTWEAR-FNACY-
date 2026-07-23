@@ -14,12 +14,36 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
+import os
+from pathlib import Path
+
 from .constants import (
     ACCENT_COLOR, APP_BACKGROUND, BORDER_COLOR, DANGER_COLOR, DARK_COLOR,
     HEADING_FONT, NORMAL_FONT, PRIMARY_COLOR, SMALL_FONT,
     SUCCESS_COLOR, TEXT_ON_APP_BG, TEXT_ON_DANGER, TEXT_ON_PRIMARY,
     WARNING_COLOR,
 )
+
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+_ICON_ICO = _BASE_DIR / "pos_billing" / "assets" / "app_icon.ico"
+_ICON_PNG = _BASE_DIR / "pos_billing" / "assets" / "app_icon.png"
+_cached_icon_photo = None
+
+
+def apply_app_icon(win: tk.Misc) -> None:
+    """Apply the official Bereeze Footwear Fancy app icon to any Tk root or Toplevel window."""
+    global _cached_icon_photo
+    try:
+        if os.path.exists(_ICON_ICO):
+            win.iconbitmap(str(_ICON_ICO))
+        elif os.path.exists(_ICON_PNG):
+            from PIL import Image, ImageTk
+            if _cached_icon_photo is None:
+                img = Image.open(_ICON_PNG)
+                _cached_icon_photo = ImageTk.PhotoImage(img)
+            win.iconphoto(True, _cached_icon_photo)
+    except Exception:
+        pass
 
 
 # ─── Labels ────────────────────────────────────────────────────────────────
