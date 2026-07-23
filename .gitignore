@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+logs/
+
+# SQLite & Local DB
+*.sqlite
+*.sqlite3
+*.db
+pos_data.sqlite
+
+# Backups & Temp & Records & Exports
+backups/
+temp/
+records/
+exports/
+
+# Java build artifacts
+bin/
+*.class
+
+# IDE
+.vscode/
+.idea/
+.classpath
+.project

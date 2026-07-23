@@ -1,0 +1,25 @@
+# ── Core (all built-in to Python 3.8+, no install needed) ──
+# tkinter         – GUI (ships with Python on Windows)
+# sqlite3         – database (built-in)
+# hashlib         – password hashing (built-in)
+# logging         – application logging (built-in)
+# csv             – CSV export (built-in)
+# configparser    – reads config.properties (built-in)
+# pathlib         – path management (built-in)
+
+# ── Optional: MySQL support ─────────────────────────────────
+# Uncomment if you want to connect to a real MySQL server:
+# mysql-connector-python>=8.0
+
+# ── Optional: PDF receipt printing ─────────────────────────
+# reportlab>=4.0
+
+# ── Optional: QR code / barcode generation ─────────────────
+# qrcode[pil]>=7.4
+# python-barcode>=0.15
+
+# ── Optional: Excel export ──────────────────────────────────
+# openpyxl>=3.1
+
+# ── Optional: Packaging as executable ──────────────────────
+# pyinstaller>=6.0
