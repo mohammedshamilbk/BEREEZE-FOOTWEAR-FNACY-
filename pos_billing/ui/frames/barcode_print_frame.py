@@ -322,15 +322,29 @@ class BarcodePrintFrame(tk.Frame):
         self.combo_layout.pack(side=tk.LEFT, padx=(6, 0))
 
     def _refresh_printers(self) -> None:
-        """Dynamically fetch connected optical/system printers from Windows OS."""
+        """Dynamically fetch connected optical/system printers asynchronously without UI lag."""
+        import threading
+
+        # Set fast cached printers immediately
         printers = get_available_printers()
         self.combo_printers["values"] = printers
-        
         saved = self.settings.get("selected_printer")
         if saved and saved in printers:
             self.combo_printers.set(saved)
         elif printers:
             self.combo_printers.set(printers[0])
+
+        # Run deep refresh in background daemon thread
+        def _bg_fetch():
+            fresh_printers = get_available_printers(force_refresh=True)
+            def _update_ui():
+                if self.winfo_exists():
+                    self.combo_printers["values"] = fresh_printers
+                    if saved and saved in fresh_printers:
+                        self.combo_printers.set(saved)
+            self.after(0, _update_ui)
+
+        threading.Thread(target=_bg_fetch, daemon=True).start()
 
     # ── 3. User Action Inputs (Enter Barcode / Load Invoice) ───────────────
     def _build_action_inputs(self) -> None:
@@ -719,7 +733,8 @@ class BarcodePrintFrame(tk.Frame):
             messagebox.showerror("Error", "Failed saving configuration file.", parent=self)
 
     def _preview_action(self) -> None:
-        """Preview -> Open Preview."""
+        """Preview -> Open Preview asynchronously without freezing UI."""
+        import threading
         if not self.queue_items:
             messagebox.showwarning("Empty Queue", "Please search for a product or load an invoice to preview barcode labels.", parent=self)
             return
@@ -728,15 +743,27 @@ class BarcodePrintFrame(tk.Frame):
         scheme = self.combo_scheme.get()
         layout = self.combo_layout.get()
 
-        pages = render_print_sheet(self.queue_items, scheme=scheme, layout_type=layout)
-        if not pages:
-            messagebox.showwarning("Preview Error", "Could not render label pages.", parent=self)
-            return
+        self._update_status("Rendering label preview... Please wait.")
+        self.config(cursor="watch")
 
-        BarcodePreviewDialog(self, pages, printer, scheme)
+        def _bg_render():
+            pages = render_print_sheet(self.queue_items, scheme=scheme, layout_type=layout)
+            def _finish():
+                if self.winfo_exists():
+                    self.config(cursor="")
+                    if not pages:
+                        messagebox.showwarning("Preview Error", "Could not render label pages.", parent=self)
+                        self._update_status("Preview Error")
+                    else:
+                        self._update_status("Preview ready.")
+                        BarcodePreviewDialog(self, pages, printer, scheme)
+            self.after(0, _finish)
+
+        threading.Thread(target=_bg_render, daemon=True).start()
 
     def _print_action(self) -> None:
-        """Print Barcode -> Send To Printer -> Printing Complete -> Wait For Next Action."""
+        """Print Barcode -> Send To Printer asynchronously without freezing UI."""
+        import threading
         if not self.queue_items:
             messagebox.showwarning("Empty Queue", "Please search for a product or load an invoice before printing.", parent=self)
             return
@@ -759,15 +786,24 @@ class BarcodePrintFrame(tk.Frame):
             self._update_status("Printing cancelled by user.")
             return
 
-        pages = render_print_sheet(self.queue_items, scheme=scheme, layout_type=layout)
-        success, msg = print_to_system_printer(pages, printer, copies=1)
+        self._update_status("Generating labels & sending to printer... Please wait.")
+        self.config(cursor="watch")
 
-        if success:
-            messagebox.showinfo("✅ Printing Complete", msg, parent=self)
-            self._update_status("Printing Complete! Waiting for next action.")
-        else:
-            messagebox.showerror("❌ Print Error", msg, parent=self)
-            self._update_status("Error sending job to printer.")
+        def _bg_print():
+            pages = render_print_sheet(self.queue_items, scheme=scheme, layout_type=layout)
+            success, msg = print_to_system_printer(pages, printer, copies=1)
+            def _finish():
+                if self.winfo_exists():
+                    self.config(cursor="")
+                    if success:
+                        messagebox.showinfo("✅ Printing Complete", msg, parent=self)
+                        self._update_status("Printing Complete! Waiting for next action.")
+                    else:
+                        messagebox.showerror("❌ Print Error", msg, parent=self)
+                        self._update_status("Error sending job to printer.")
+            self.after(0, _finish)
+
+        threading.Thread(target=_bg_print, daemon=True).start()
 
     def _open_scheme_settings(self) -> None:
         """Modal dialog for customizing store name, dimensions, and options."""

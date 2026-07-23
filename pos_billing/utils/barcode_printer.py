@@ -33,14 +33,22 @@ SETTINGS_FILE = "pos_billing/assets/barcode_settings.json"
 # ─────────────────────────────────────────────────────────────
 # 1. System Printer Discovery (Windows API & Shell)
 # ─────────────────────────────────────────────────────────────
-def get_available_printers() -> List[str]:
+# ── Printer Discovery Cache & Background Fetching ─────────────────────────
+_cached_printers: List[str] = []
+_cached_default_printer: str = ""
+
+def get_available_printers(force_refresh: bool = False) -> List[str]:
     """
-    Dynamically enumerate all optical / physical and virtual printers
-    connected to or installed on the Windows system.
+    Fast, non-blocking printer enumeration with memoized caching.
+    Uses native C-API win32print if available, or fast PowerShell queries.
     """
+    global _cached_printers
+    if _cached_printers and not force_refresh:
+        return _cached_printers
+
     printers: List[str] = []
 
-    # Method A: win32print (fastest & native if pywin32 installed)
+    # Method A: win32print (instant C-API call)
     try:
         import win32print
         flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
@@ -49,35 +57,22 @@ def get_available_printers() -> List[str]:
             if name and name not in printers:
                 printers.append(name)
     except Exception as exc:
-        logger.debug("win32print not available or failed: %s", exc)
+        logger.debug("win32print not available: %s", exc)
 
-    # Method B: PowerShell Get-Printer
+    # Method B: Fast PowerShell query if win32print produced no results
     if not printers:
         try:
             cmd = ["powershell", "-NoProfile", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"]
             creationflags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-            out = subprocess.check_output(cmd, text=True, creationflags=creationflags, timeout=5)
+            out = subprocess.check_output(cmd, text=True, creationflags=creationflags, timeout=2)
             for line in out.splitlines():
                 clean = line.strip()
                 if clean and clean not in printers:
                     printers.append(clean)
         except Exception as exc:
-            logger.debug("PowerShell printer check failed: %s", exc)
+            logger.debug("PowerShell printer check skipped: %s", exc)
 
-    # Method C: WMIC fallback
-    if not printers:
-        try:
-            cmd = ["wmic", "printer", "get", "name"]
-            creationflags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-            out = subprocess.check_output(cmd, text=True, creationflags=creationflags, timeout=5)
-            for line in out.splitlines():
-                clean = line.strip()
-                if clean and clean.lower() != "name" and clean not in printers:
-                    printers.append(clean)
-        except Exception as exc:
-            logger.debug("WMIC printer check failed: %s", exc)
-
-    # Fallback if no printer detected (e.g. clean test VM)
+    # Fallback list if no physical/virtual printer enumerated
     if not printers:
         printers = [
             "System Default Printer",
@@ -87,28 +82,36 @@ def get_available_printers() -> List[str]:
             "EPSON TM-T82 Thermal Printer"
         ]
 
-    return printers
+    _cached_printers = printers
+    return _cached_printers
 
 
 def get_default_printer() -> str:
-    """Retrieve the Windows system default printer."""
+    """Retrieve the Windows system default printer with caching."""
+    global _cached_default_printer
+    if _cached_default_printer:
+        return _cached_default_printer
+
     try:
         import win32print
-        return win32print.GetDefaultPrinter()
+        _cached_default_printer = win32print.GetDefaultPrinter()
+        return _cached_default_printer
     except Exception:
         pass
 
     try:
         cmd = ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Printer | Where-Object {$_.Default -eq $true}).Name"]
         creationflags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-        out = subprocess.check_output(cmd, text=True, creationflags=creationflags, timeout=3).strip()
+        out = subprocess.check_output(cmd, text=True, creationflags=creationflags, timeout=2).strip()
         if out:
-            return out
+            _cached_default_printer = out
+            return _cached_default_printer
     except Exception:
         pass
 
     printers = get_available_printers()
-    return printers[0] if printers else "System Default Printer"
+    _cached_default_printer = printers[0] if printers else "System Default Printer"
+    return _cached_default_printer
 
 
 # ─────────────────────────────────────────────────────────────
@@ -121,8 +124,7 @@ def generate_barcode_image(
     height: int = 110
 ) -> Image.Image:
     """
-    Generate a high-resolution PIL Image for a given code string and barcode scheme.
-    Supports: Code 128, Code 39, EAN-13, QR Code.
+    Generate a high-resolution PIL Image in memory (zero disk I/O) for a given code string and scheme.
     """
     if not Image or not ImageDraw:
         raise ImportError("PIL (Pillow) is required for image generation.")
@@ -142,8 +144,9 @@ def generate_barcode_image(
         except ImportError:
             pass
 
-    # 1D Barcodes via python-barcode library
+    # 1D Barcodes via python-barcode library in memory (BytesIO)
     try:
+        import io
         import barcode
         from barcode.writer import ImageWriter
 
@@ -152,16 +155,11 @@ def generate_barcode_image(
             bc_type = "code39"
         elif "ean" in scheme_lower or "13" in scheme_lower:
             bc_type = "ean13"
-            # EAN-13 requires 12 digits (+ 1 checksum auto calculated)
             digits = "".join(filter(str.isdigit, clean_code))
             clean_code = (digits + "0" * 12)[:12]
 
         bc_class = barcode.get_barcode_class(bc_type)
         bc_obj = bc_class(clean_code, writer=ImageWriter())
-        
-        # Write to temporary memory/file
-        temp_dir = tempfile.gettempdir()
-        temp_path = os.path.join(temp_dir, f"temp_barcode_{os.getpid()}")
         
         options = {
             "module_width": 0.35,
@@ -169,17 +167,15 @@ def generate_barcode_image(
             "quiet_zone": 1.5,
             "font_size": 10,
             "text_distance": 3.0,
-            "write_text": False  # we draw custom text during label rendering
+            "write_text": False
         }
-        saved_filename = bc_obj.save(temp_path, options=options)
-        
-        img = Image.open(saved_filename).convert("RGB")
-        img = img.resize((width, height), Image.Resampling.LANCZOS)
-        try:
-            os.remove(saved_filename)
-        except Exception:
-            pass
-        return img
+
+        buf = io.BytesIO()
+        bc_obj.write(buf, options=options)
+        buf.seek(0)
+
+        img = Image.open(buf).convert("RGB")
+        return img.resize((width, height), Image.Resampling.LANCZOS)
     except Exception as exc:
         logger.debug("python-barcode generation fallback for '%s': %s", clean_code, exc)
 
