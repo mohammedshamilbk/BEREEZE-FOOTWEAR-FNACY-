@@ -20,6 +20,9 @@ from typing import List, Dict, Any, Optional, Tuple
 
 try:
     from PIL import Image, ImageDraw, ImageFont
+    import PIL.JpegImagePlugin  # noqa: F401
+    import PIL.PngImagePlugin   # noqa: F401
+    import PIL.PdfImagePlugin   # noqa: F401
 except ImportError:
     Image = None
     ImageDraw = None
@@ -407,6 +410,14 @@ def print_to_system_printer(
 
     clean_printer = printer_name.strip() or get_default_printer()
 
+    # Ensure Pillow image plugins (JPEG/PNG/PDF) are initialized
+    try:
+        import PIL.JpegImagePlugin  # noqa: F401
+        import PIL.PngImagePlugin   # noqa: F401
+        import PIL.PdfImagePlugin   # noqa: F401
+    except Exception:
+        pass
+
     # Save pages to a multi-page PDF in temp directory
     temp_dir = tempfile.gettempdir()
     pdf_path = os.path.join(temp_dir, f"bereeze_barcodes_{os.getpid()}.pdf")
@@ -414,13 +425,19 @@ def print_to_system_printer(
     try:
         pages[0].save(
             pdf_path,
+            format="PDF",
             save_all=True,
             append_images=pages[1:],
             resolution=300.0
         )
     except Exception as exc:
-        logger.error("Failed saving temporary PDF: %s", exc)
-        return False, f"Failed formatting labels for printing: {exc}"
+        logger.error("Failed saving temporary PDF, attempting PNG fallback: %s", exc)
+        try:
+            png_path = os.path.join(temp_dir, f"bereeze_barcodes_{os.getpid()}.png")
+            pages[0].save(png_path, format="PNG", resolution=300.0)
+            pdf_path = png_path
+        except Exception as exc2:
+            return False, f"Failed formatting labels for printing: {exc2}"
 
     # Method 1: win32api ShellExecute PrintTo (Direct Windows Spooler)
     try:
