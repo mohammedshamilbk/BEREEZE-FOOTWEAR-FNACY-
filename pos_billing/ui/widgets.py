@@ -33,15 +33,28 @@ _cached_icon_photo = None
 def apply_app_icon(win: tk.Misc) -> None:
     """Apply the official Bereeze Footwear Fancy app icon to any Tk root or Toplevel window."""
     global _cached_icon_photo
+
+    # Windows AppUserModelID to force taskbar icon
     try:
-        if os.path.exists(_ICON_ICO):
-            win.iconbitmap(str(_ICON_ICO))
-        elif os.path.exists(_ICON_PNG):
+        import ctypes
+        myappid = "bereeze.footwear.pos.1.0"
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
+
+    try:
+        if os.path.exists(_ICON_PNG):
             from PIL import Image, ImageTk
             if _cached_icon_photo is None:
                 img = Image.open(_ICON_PNG)
                 _cached_icon_photo = ImageTk.PhotoImage(img)
             win.iconphoto(True, _cached_icon_photo)
+
+        if os.path.exists(_ICON_ICO):
+            try:
+                win.iconbitmap(str(_ICON_ICO))
+            except Exception:
+                pass
     except Exception:
         pass
 

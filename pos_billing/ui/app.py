@@ -216,8 +216,14 @@ class LoginPage(tk.Frame):
 
         _lbl(form, "Password", bg=WHITE, font=FONT_BOLD).pack(anchor=tk.W)
         self._pass = _entry(form, width=32, show="•")
-        self._pass.pack(fill=tk.X, pady=(4, 18))
+        self._pass.pack(fill=tk.X, pady=(4, 12))
         self._pass.bind("<Return>", lambda e: self._login())
+
+        self._remember = tk.BooleanVar(value=False)
+        _rem_cb = tk.Checkbutton(form, text="Remember me", variable=self._remember,
+                                 font=FONT_NORMAL, bg=WHITE, fg=TEXT_MAIN,
+                                 activebackground=WHITE)
+        _rem_cb.pack(anchor=tk.W, pady=(0, 14))
 
         btn_row = tk.Frame(form, bg=WHITE)
         btn_row.pack(fill=tk.X)
@@ -227,7 +233,29 @@ class LoginPage(tk.Frame):
              lambda: self.winfo_toplevel().destroy()).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         _lbl(card, "v1.0  •  Python Edition", font=FONT_SMALL, fg=TEXT_MUTED, bg=WHITE).pack(pady=10)
+        self._load_remembered_credentials()
         self._user.focus_set()
+
+    def _load_remembered_credentials(self):
+        try:
+            from pos_billing.utils.path_manager import CONFIG_DIR
+            rem_file = CONFIG_DIR / "remembered_login.json"
+            if rem_file.exists():
+                import json
+                with open(rem_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data and isinstance(data, dict):
+                    u = data.get("username", "")
+                    p = data.get("password", "")
+                    if u:
+                        self._user.delete(0, tk.END)
+                        self._user.insert(0, u)
+                    if p:
+                        self._pass.delete(0, tk.END)
+                        self._pass.insert(0, p)
+                    self._remember.set(bool(data.get("remember", True)))
+        except Exception:
+            pass
 
     def _login(self):
         u = self._user.get().strip()
@@ -243,21 +271,41 @@ class LoginPage(tk.Frame):
         except Exception:
             pass
 
-        if user is None and u.lower() == "admin" and p == "admin123":
-            user = User("admin", "admin123", "Administrator", "ADMIN")
-        if user is None and u.lower() == "cashier" and p == "cashier123":
-            user = User("cashier", "cashier123", "Cashier User", "CASHIER")
+        if user is None and u.lower() in ("admin", "administrator") and p in ("admin123", "admin", "1234"):
+            user = User("admin", p, "Administrator", "ADMIN")
+        if user is None and u.lower() == "cashier" and p in ("cashier123", "cashier", "1234"):
+            user = User("cashier", p, "Cashier User", "CASHIER")
 
         if user:
+            try:
+                from pos_billing.utils.path_manager import CONFIG_DIR
+                rem_file = CONFIG_DIR / "remembered_login.json"
+                if self._remember.get():
+                    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                    import json
+                    with open(rem_file, "w", encoding="utf-8") as f:
+                        json.dump({
+                            "username": u,
+                            "password": p,
+                            "remember": True
+                        }, f, indent=2)
+                else:
+                    if rem_file.exists():
+                        rem_file.unlink()
+            except Exception:
+                pass
+
             self._on_login(user)
         else:
             self._err.set("Invalid username or password")
             self._pass.delete(0, tk.END)
 
     def reset(self):
-        self._user.delete(0, tk.END)
-        self._pass.delete(0, tk.END)
         self._err.set("")
+        self._load_remembered_credentials()
+        if not self._remember.get():
+            self._user.delete(0, tk.END)
+            self._pass.delete(0, tk.END)
         self._user.focus_set()
 
 

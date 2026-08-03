@@ -41,6 +41,15 @@ def _dt(value) -> Optional[datetime]:
     return None
 
 
+def _auto_save(event: str = "change", force_db: bool = False) -> None:
+    """Trigger non-blocking auto-save and auto-backup."""
+    try:
+        from ..utils.auto_save_manager import trigger_auto_save
+        trigger_auto_save(event, force_db_backup=force_db)
+    except Exception as exc:
+        logger.debug("Auto-save trigger error: %s", exc)
+
+
 # ═══════════════════════════════════════════════════════════════
 # USER DAO  (UserDAO.java → Python)
 # ═══════════════════════════════════════════════════════════════
@@ -380,6 +389,7 @@ def save_bill(bill: Bill) -> bool:
                  item.quantity, item.unit_price, item.discount, item.total_amount),
             )
         conn.commit()
+        _auto_save("save_bill", force_db=True)
         return True
     except Exception as exc:
         logger.error("save_bill error: %s", exc)
@@ -488,6 +498,7 @@ def update_bill_status(bill_number: str, status: str) -> bool:
         cur = conn.cursor()
         cur.execute("UPDATE bill SET status=? WHERE billNumber=?", (status, bill_number))
         conn.commit()
+        _auto_save("update_bill_status", force_db=True)
         return True
     except Exception as exc:
         logger.error("update_bill_status error: %s", exc)
@@ -901,6 +912,7 @@ def save_expense(expense: Expense) -> None:
             if hasattr(cur, "lastrowid"):
                 expense.expense_id = cur.lastrowid
         conn.commit()
+        _auto_save("save_expense")
     finally:
         close_connection(conn)
 
@@ -923,6 +935,7 @@ def delete_expense(expense_id: int) -> None:
         """)
         cur.execute("DELETE FROM expense WHERE expense_id = ?", (expense_id,))
         conn.commit()
+        _auto_save("delete_expense")
     finally:
         close_connection(conn)
 
@@ -1049,6 +1062,403 @@ def get_daily_sales_by_payment_mode(date_str: str = None) -> dict:
         }
     finally:
         close_connection(conn)
+
+
+# ═══════════════════════════════════════════════════════════════
+# GAME STATIONS & GAME SESSIONS DAO
+# ═══════════════════════════════════════════════════════════════
+class GameSessionDAO:
+    def get_all_stations(self) -> List[dict]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT station_id, station_name, station_type, hourly_rate, status, current_session_id FROM game_station ORDER BY station_id")
+            rows = cur.fetchall()
+            return [
+                {
+                    "station_id": r["station_id"],
+                    "station_name": r["station_name"],
+                    "station_type": r["station_type"],
+                    "hourly_rate": float(r["hourly_rate"]),
+                    "status": r["status"],
+                    "current_session_id": r["current_session_id"],
+                }
+                for r in rows
+            ]
+        finally:
+            close_connection(conn)
+
+    def get_active_sessions(self) -> List[dict]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT s.*, st.station_name
+                FROM game_session s
+                JOIN game_station st ON s.station_id = st.station_id
+                WHERE s.status = 'ACTIVE'
+                ORDER BY s.session_id DESC
+            """)
+            rows = cur.fetchall()
+            return [
+                {
+                    "session_id": r["session_id"],
+                    "station_id": r["station_id"],
+                    "station_name": r["station_name"],
+                    "customer_id": r["customer_id"],
+                    "customer_name": r["customer_name"],
+                    "start_time": str(r["start_time"]),
+                    "end_time": str(r["end_time"]) if r["end_time"] else None,
+                    "duration_minutes": float(r["duration_minutes"] or 0),
+                    "rate_per_hour": float(r["rate_per_hour"]),
+                    "total_amount": float(r["total_amount"] or 0),
+                    "paid_amount": float(r["paid_amount"] or 0),
+                    "payment_mode": r["payment_mode"] or "",
+                    "status": r["status"],
+                    "user_id": r["user_id"],
+                }
+                for r in rows
+            ]
+        finally:
+            close_connection(conn)
+
+    def start_session(self, station_id: int, customer_id: int, customer_name: str, rate_per_hour: float = None, user_id: int = 1) -> dict:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT station_name, hourly_rate, status FROM game_station WHERE station_id = ?", (station_id,))
+            st = cur.fetchone()
+            if not st or st["status"] == "OCCUPIED":
+                return None
+
+            rate = rate_per_hour if rate_per_hour is not None else float(st["hourly_rate"])
+            start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            cur.execute("""
+                INSERT INTO game_session (station_id, customer_id, customer_name, start_time, rate_per_hour, status, user_id)
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)
+            """, (station_id, customer_id, customer_name, start_str, rate, user_id))
+            session_id = cur.lastrowid
+
+            cur.execute("""
+                UPDATE game_station
+                SET status = 'OCCUPIED', current_session_id = ?
+                WHERE station_id = ?
+            """, (session_id, station_id))
+
+            conn.commit()
+            return {
+                "session_id": session_id,
+                "station_id": station_id,
+                "station_name": st["station_name"],
+                "customer_id": customer_id,
+                "customer_name": customer_name,
+                "start_time": start_str,
+                "rate_per_hour": rate,
+            }
+        finally:
+            close_connection(conn)
+
+    def end_session(self, session_id: int, payment_mode: str = "CASH", discount: float = 0.0) -> dict:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT s.*, st.station_name
+                FROM game_session s
+                JOIN game_station st ON s.station_id = st.station_id
+                WHERE s.session_id = ? AND s.status = 'ACTIVE'
+            """, (session_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            start_dt = datetime.strptime(str(row["start_time"])[:19], "%Y-%m-%d %H:%M:%S")
+            end_dt = datetime.now()
+            end_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            duration_mins = max(1.0, (end_dt - start_dt).total_seconds() / 60.0)
+            rate = float(row["rate_per_hour"])
+            total_amt = max(0.0, (duration_mins / 60.0 * rate) - discount)
+
+            cur.execute("""
+                UPDATE game_session
+                SET end_time = ?, duration_minutes = ?, total_amount = ?, paid_amount = ?, payment_mode = ?, status = 'COMPLETED'
+                WHERE session_id = ?
+            """, (end_str, duration_mins, total_amt, total_amt, payment_mode, session_id))
+
+            cur.execute("""
+                UPDATE game_station
+                SET status = 'AVAILABLE', current_session_id = NULL
+                WHERE station_id = ?
+            """, (row["station_id"],))
+
+            conn.commit()
+            return {
+                "session_id": session_id,
+                "station_id": row["station_id"],
+                "station_name": row["station_name"],
+                "customer_id": row["customer_id"],
+                "customer_name": row["customer_name"],
+                "start_time": str(row["start_time"]),
+                "end_time": end_str,
+                "duration_minutes": duration_mins,
+                "rate_per_hour": rate,
+                "total_amount": total_amt,
+                "paid_amount": total_amt,
+                "payment_mode": payment_mode,
+                "user_id": row["user_id"],
+            }
+        finally:
+            close_connection(conn)
+
+
+class AuditLogDAO:
+    def get_recent_logs(self, limit: int = 100) -> List[dict]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT logId as log_id, userId as user_id, action, tableName as table_name, recordId as record_id, oldValue as old_value, newValue as new_value, actionDate as action_date
+                FROM audit_log
+                ORDER BY logId DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            close_connection(conn)
+
+
+class UserDAO:
+    def find_by_username(self, username: str) -> Optional[User]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM user WHERE username=?", (username,))
+            row = cur.fetchone()
+            return _row_to_user(row) if row else None
+        finally:
+            close_connection(conn)
+
+    def find_by_id(self, user_id: int) -> Optional[User]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM user WHERE userId=?", (user_id,))
+            row = cur.fetchone()
+            return _row_to_user(row) if row else None
+        finally:
+            close_connection(conn)
+
+    def get_all_users(self) -> List[User]:
+        return get_all_users()
+
+    def insert_user(self, user: User) -> bool:
+        return save_user(user)
+
+    def update_user(self, user: User) -> bool:
+        return save_user(user)
+
+    def delete_user(self, user_id: int) -> bool:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM user WHERE userId=?", (user_id,))
+            conn.commit()
+            return True
+        finally:
+            close_connection(conn)
+
+
+class CustomerDAO:
+    def get_all_customers(self) -> List[Customer]:
+        return get_all_customers()
+
+    def find_by_id(self, customer_id: int) -> Optional[Customer]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM customer WHERE customerId=?", (customer_id,))
+            row = cur.fetchone()
+            return _row_to_customer(row) if row else None
+        finally:
+            close_connection(conn)
+
+    def insert_customer(self, customer: Customer) -> int:
+        save_customer(customer)
+        return customer.customer_id or 1
+
+    def update_customer(self, customer: Customer) -> bool:
+        return save_customer(customer)
+
+    def get_next_customer_id(self) -> int:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COALESCE(MAX(customerId), 0) + 1 FROM customer")
+            return cur.fetchone()[0]
+        finally:
+            close_connection(conn)
+
+
+class ItemMasterDAO:
+    def get_all_items(self) -> List[ItemMaster]:
+        return get_all_items()
+
+    def get_low_stock_items(self) -> List[ItemMaster]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM item_master WHERE stockQuantity <= reorderLevel AND status='ACTIVE'")
+            return [_row_to_item(r) for r in cur.fetchall()]
+        finally:
+            close_connection(conn)
+
+    def find_by_id(self, item_id: int) -> Optional[ItemMaster]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM item_master WHERE itemId=?", (item_id,))
+            row = cur.fetchone()
+            return _row_to_item(row) if row else None
+        finally:
+            close_connection(conn)
+
+    def find_by_code(self, item_code: str) -> Optional[ItemMaster]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM item_master WHERE itemCode=?", (item_code,))
+            row = cur.fetchone()
+            return _row_to_item(row) if row else None
+        finally:
+            close_connection(conn)
+
+    def insert_item(self, item: ItemMaster) -> int:
+        save_item(item)
+        return item.item_id or 1
+
+    def update_item(self, item: ItemMaster) -> bool:
+        return save_item(item)
+
+
+class BillDAO:
+    def get_all_bills(self) -> List[Bill]:
+        return get_all_bills()
+
+    def get_recent_bills(self, limit: int = 50) -> List[Bill]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM bill ORDER BY billId DESC LIMIT ?", (limit,))
+            return [_row_to_bill(r) for r in cur.fetchall()]
+        finally:
+            close_connection(conn)
+
+    def get_bills_by_date(self, date_str: str) -> List[Bill]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            start = f"{date_str} 00:00:00"
+            end = f"{date_str} 23:59:59"
+            cur.execute("SELECT * FROM bill WHERE billDate >= ? AND billDate <= ?", (start, end))
+            return [_row_to_bill(r) for r in cur.fetchall()]
+        finally:
+            close_connection(conn)
+
+    def get_next_bill_number(self) -> int:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COALESCE(MAX(billId), 0) + 1 FROM bill")
+            return cur.fetchone()[0]
+        finally:
+            close_connection(conn)
+
+    def insert_bill(self, bill: Bill) -> int:
+        res = save_bill(bill)
+        return bill.bill_id if res else 0
+
+
+class ExpenseDAO:
+    def get_all_expenses(self) -> List[Expense]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM expense ORDER BY expense_id DESC")
+            rows = cur.fetchall()
+            return [
+                Expense(
+                    expense_id=r["expense_id"],
+                    category=r["category"],
+                    description=r["description"] or "",
+                    amount=float(r["amount"]),
+                    payment_mode=r["payment_mode"] or "CASH",
+                    expense_date=str(r["expense_date"]),
+                    user_id=r["user_id"] if "user_id" in r.keys() else 0,
+                )
+                for r in rows
+            ]
+        finally:
+            close_connection(conn)
+
+    def get_expenses_by_date(self, date_str: str) -> List[Expense]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            start = f"{date_str} 00:00:00"
+            end = f"{date_str} 23:59:59"
+            cur.execute("SELECT * FROM expense WHERE expense_date >= ? AND expense_date <= ?", (start, end))
+            rows = cur.fetchall()
+            return [
+                Expense(
+                    expense_id=r["expense_id"],
+                    category=r["category"],
+                    description=r["description"] or "",
+                    amount=float(r["amount"]),
+                    payment_mode=r["payment_mode"] or "CASH",
+                    expense_date=str(r["expense_date"]),
+                    user_id=r["user_id"] if "user_id" in r.keys() else 0,
+                )
+                for r in rows
+            ]
+        finally:
+            close_connection(conn)
+
+    def insert_expense(self, expense: Expense) -> int:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO expense (expense_date, category, description, amount, payment_mode, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (expense.expense_date, expense.category, expense.description, expense.amount, expense.payment_mode, expense.user_id))
+            conn.commit()
+            return cur.lastrowid
+        finally:
+            close_connection(conn)
+
+
+class SupplierDAO:
+    def get_all_suppliers(self) -> List[Supplier]:
+        return get_all_suppliers()
+
+    def find_by_id(self, supplier_id: int) -> Optional[Supplier]:
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM supplier WHERE supplierId=?", (supplier_id,))
+            row = cur.fetchone()
+            return _row_to_supplier(row) if row else None
+        finally:
+            close_connection(conn)
+
+    def insert_supplier(self, supplier: Supplier) -> int:
+        save_supplier(supplier)
+        return supplier.supplier_id or 1
+
+
 
 
 

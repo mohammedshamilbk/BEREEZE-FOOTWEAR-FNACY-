@@ -19,6 +19,7 @@ backups/
 temp/
 records/
 exports/
+*.pdf
 
 # Java build artifacts
 bin/

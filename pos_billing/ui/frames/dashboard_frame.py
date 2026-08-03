@@ -16,6 +16,7 @@ from typing import Callable, Optional
 from ...database import dao
 from ...database.models import User
 from ...utils.path_manager import EXPORTS_DIR
+from ...utils import excel_exporter
 from ..constants import (
     APP_BACKGROUND, BORDER_COLOR, DARK_COLOR, DANGER_COLOR, HEADING_FONT,
     NORMAL_FONT, PRIMARY_COLOR, SMALL_FONT, SUCCESS_COLOR,
@@ -216,6 +217,7 @@ class DashboardFrame(tk.Frame):
 
         _make_button(tbl_actions, "👁️ View & Print Bill", "#0284C7", "white", self._open_selected_bill, pady=4, padx=10).pack(side=tk.LEFT, padx=3)
         _make_button(tbl_actions, "🚫 Cancel Bill", "#DC2626", "white", self._cancel_selected_bill, pady=4, padx=10).pack(side=tk.LEFT, padx=3)
+        _make_button(tbl_actions, "📊 Export Excel", "#10B981", "white", self._export_recent_bills_excel, pady=4, padx=10).pack(side=tk.LEFT, padx=3)
         _make_button(tbl_actions, "📥 Export CSV", "#059669", "white", self._export_recent_bills_csv, pady=4, padx=10).pack(side=tk.LEFT, padx=3)
         _make_button(tbl_actions, "🔄 Refresh List", "#475569", "white", self._reload_bills_table, pady=4, padx=10).pack(side=tk.LEFT, padx=3)
 
@@ -311,6 +313,32 @@ class DashboardFrame(tk.Frame):
                 self._build()  # Refresh metrics & bills list
             else:
                 messagebox.showerror("Error", f"Failed to cancel bill '{bill_no}'.", parent=self)
+
+    def _export_recent_bills_excel(self) -> None:
+        """Action handler to export recent bills list to an Excel (.xlsx) file."""
+        if not self._tree:
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Files (*.xlsx)", "*.xlsx"), ("CSV Files (*.csv)", "*.csv")],
+            title="Export Recent Bills to Excel",
+            initialfile="recent_bills.xlsx"
+        )
+        if not path:
+            return
+        try:
+            headers = ["Bill No", "Date", "Customer", "Amount (₹)", "Payment Mode", "Status"]
+            rows = [self._tree.item(item_id, "values") for item_id in self._tree.get_children()]
+            out_path = excel_exporter.export_table_to_excel(
+                filepath=path,
+                title="Bereeze Footwear - Recent Bills Log",
+                headers=headers,
+                rows=rows,
+                sheet_name="Recent Bills"
+            )
+            messagebox.showinfo("Exported", f"Recent bills exported successfully to:\n{out_path}", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Export Error", str(exc), parent=self)
 
     def _export_recent_bills_csv(self) -> None:
         """Action handler to export recent bills list to a CSV file."""
@@ -463,14 +491,30 @@ class ShopClosingDialog(tk.Toplevel):
             self._var_lbl.config(text="Invalid Cash Value", fg="#DC2626")
 
     def _save_report(self) -> None:
-        filename = f"day_closing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        filepath = EXPORTS_DIR / filename
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        excel_path = EXPORTS_DIR / f"day_closing_{stamp}.xlsx"
+        csv_path = EXPORTS_DIR / f"day_closing_{stamp}.csv"
+
+        closing_data = {
+            "closing_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user": getattr(self.user, "full_name", "Admin"),
+            "yesterday_str": self._yesterday_str,
+            "today_str": self._today_str,
+            "yesterday_data": self._yesterday_data,
+            "today_data": self._today_data,
+            "cash_counted": self._cash_entry.get(),
+            "variance_text": self._var_lbl.cget("text"),
+            "remarks": self._notes_entry.get()
+        }
+
         try:
-            with open(filepath, "w", newline="", encoding="utf-8") as f:
+            out_excel = excel_exporter.export_day_closing_to_excel(str(excel_path), closing_data)
+
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(["BEREEZE FOOTWEAR - SHOP CLOSING & DAY END REPORT"])
-                writer.writerow(["Date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
-                writer.writerow(["Closed By", self.user.full_name])
+                writer.writerow(["Date", closing_data["closing_date"]])
+                writer.writerow(["Closed By", closing_data["user"]])
                 writer.writerow([])
                 writer.writerow(["METRIC", f"YESTERDAY ({self._yesterday_str})", f"TODAY ({self._today_str})"])
                 writer.writerow(["Gross Cash Sales", f"{self._yesterday_data['cash_sales']:.2f}", f"{self._today_data['cash_sales']:.2f}"])
@@ -485,7 +529,7 @@ class ShopClosingDialog(tk.Toplevel):
 
             messagebox.showinfo(
                 "Day Closing Complete",
-                f"Shop Closing Report successfully saved and exported to:\n\n{filepath}",
+                f"Shop Closing Report successfully saved to Excel and CSV:\n\nExcel: {out_excel}\nCSV: {csv_path}",
                 parent=self
             )
             if self.on_complete:

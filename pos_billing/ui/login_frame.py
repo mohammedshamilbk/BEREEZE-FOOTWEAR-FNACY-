@@ -13,6 +13,7 @@ Mirrors Java's LoginFrame with:
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from tkinter import messagebox
 
@@ -26,7 +27,7 @@ from .constants import (
 from .widgets import (
     create_button, create_danger_button, create_entry,
     create_label, create_password_entry, create_secondary_button,
-    create_success_button,
+    create_success_button, apply_app_icon, _ICON_PNG
 )
 
 
@@ -35,11 +36,13 @@ class LoginFrame(tk.Tk):
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("Bereezefootwearfancy – Login")
+        self.title("Bereeze Footwear Fancy – Login")
         self.geometry("480x540")
         self.resizable(False, False)
         self.configure(bg=APP_BACKGROUND)
+        apply_app_icon(self)
         self._build_ui()
+        self._load_remembered_credentials()
         from .widgets import center_window
         center_window(self, 480, 540)
 
@@ -50,13 +53,28 @@ class LoginFrame(tk.Tk):
         banner.pack(fill=tk.X)
         banner.pack_propagate(False)
 
-        tk.Label(
-            banner, text="👟", font=("Segoe UI Emoji", 40),
-            bg=PRIMARY_COLOR, fg=TEXT_ON_PRIMARY,
-        ).pack(pady=(24, 4))
+        logo_loaded = False
+        try:
+            from PIL import Image, ImageTk
+            if os.path.exists(_ICON_PNG):
+                img = Image.open(_ICON_PNG).convert("RGBA")
+                img_resized = img.resize((72, 72), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img_resized)
+                lbl_logo = tk.Label(banner, image=photo, bg=PRIMARY_COLOR)
+                lbl_logo._photo = photo
+                lbl_logo.pack(pady=(16, 4))
+                logo_loaded = True
+        except Exception:
+            logo_loaded = False
+
+        if not logo_loaded:
+            tk.Label(
+                banner, text="👟", font=("Segoe UI Emoji", 40),
+                bg=PRIMARY_COLOR, fg=TEXT_ON_PRIMARY,
+            ).pack(pady=(24, 4))
 
         tk.Label(
-            banner, text="BREEZE FOOTWEAR FANCY",
+            banner, text="BEREEZE FOOTWEAR FANCY",
             font=TITLE_FONT, bg=PRIMARY_COLOR, fg=TEXT_ON_PRIMARY,
         ).pack()
 
@@ -134,10 +152,52 @@ class LoginFrame(tk.Tk):
             user = User("cashier", password, "Cashier User", "CASHIER")
 
         if user is not None:
+            # Save or clear remembered credentials based on "Remember me" option
+            try:
+                from ..utils.path_manager import CONFIG_DIR
+                rem_file = CONFIG_DIR / "remembered_login.json"
+                if self._remember.get():
+                    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                    import json
+                    with open(rem_file, "w", encoding="utf-8") as f:
+                        json.dump({
+                            "username": username,
+                            "password": password,
+                            "remember": True
+                        }, f, indent=2)
+                else:
+                    if rem_file.exists():
+                        rem_file.unlink()
+            except Exception:
+                pass
+
             self._open_main(user)
         else:
             self._show_error("Invalid username or password")
             self._password_entry.delete(0, tk.END)
+
+    def _load_remembered_credentials(self) -> None:
+        """Load and auto-fill saved username and password if 'Remember Me' was enabled."""
+        try:
+            from ..utils.path_manager import CONFIG_DIR
+            rem_file = CONFIG_DIR / "remembered_login.json"
+            if rem_file.exists():
+                import json
+                with open(rem_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data and isinstance(data, dict):
+                    username = data.get("username", "")
+                    password = data.get("password", "")
+                    remember = data.get("remember", True)
+                    if username:
+                        self._username_entry.delete(0, tk.END)
+                        self._username_entry.insert(0, username)
+                    if password:
+                        self._password_entry.delete(0, tk.END)
+                        self._password_entry.insert(0, password)
+                    self._remember.set(bool(remember))
+        except Exception:
+            pass
 
     def _open_main(self, user: User) -> None:
         """Destroy login window and open main application frame."""
@@ -148,10 +208,11 @@ class LoginFrame(tk.Tk):
 
     def _on_logout(self) -> None:
         """Called when user logs out of MainFrame."""
-        # Clear fields and show login again
-        self._username_entry.delete(0, tk.END)
-        self._password_entry.delete(0, tk.END)
         self._show_error(" ")
+        self._load_remembered_credentials()
+        if not self._remember.get():
+            self._username_entry.delete(0, tk.END)
+            self._password_entry.delete(0, tk.END)
         self.deiconify()
         from .widgets import center_window
         center_window(self, 480, 540)

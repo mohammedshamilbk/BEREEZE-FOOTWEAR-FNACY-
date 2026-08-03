@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from ...database import dao
 from ...database.models import Expense, User
+from ...utils import excel_exporter
 from ..constants import (
     APP_BACKGROUND, BORDER_COLOR, DANGER_COLOR, DARK_COLOR,
     HEADING_FONT, NORMAL_FONT, PRIMARY_COLOR, SMALL_FONT,
@@ -127,6 +128,7 @@ class ExpensesFrame(tk.Frame):
         filter_cb.bind("<<ComboboxSelected>>", lambda e: self._load_expenses())
 
         create_button(act_bar, "🔄 Refresh", command=self._load_expenses).pack(side=tk.RIGHT, padx=4)
+        create_success_button(act_bar, "📊 Export Excel", command=self._export_excel).pack(side=tk.RIGHT, padx=4)
         create_button(act_bar, "💾 Export CSV", command=self._export_csv).pack(side=tk.RIGHT, padx=4)
         create_danger_button(act_bar, "🗑️ Delete Selected", command=self._delete_expense).pack(side=tk.RIGHT, padx=4)
 
@@ -233,6 +235,36 @@ class ExpensesFrame(tk.Frame):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this expense record?", parent=self):
             dao.delete_expense(exp_id)
             self._load_expenses()
+
+    def _export_excel(self) -> None:
+        if not self._expenses:
+            messagebox.showinfo("Export", "No expenses to export.", parent=self)
+            return
+
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Files (*.xlsx)", "*.xlsx"), ("CSV Files (*.csv)", "*.csv")],
+            title="Export Expense Register to Excel",
+            initialfile=f"expenses_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            parent=self
+        )
+        if path:
+            try:
+                headers = ["Expense ID", "Date & Time", "Category", "Description", "Amount (₹)", "Payment Mode"]
+                rows = [
+                    [e.expense_id, e.expense_date, e.category, e.description, e.amount, e.payment_mode]
+                    for e in self._expenses
+                ]
+                out_path = excel_exporter.export_table_to_excel(
+                    filepath=path,
+                    title="Bereeze Footwear - Shop Expenses Register",
+                    headers=headers,
+                    rows=rows,
+                    sheet_name="Expenses"
+                )
+                messagebox.showinfo("Export Complete", f"Expenses exported successfully to:\n{out_path}", parent=self)
+            except Exception as exc:
+                messagebox.showerror("Export Error", f"Could not export expenses: {exc}", parent=self)
 
     def _export_csv(self) -> None:
         if not self._expenses:

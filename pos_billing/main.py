@@ -45,6 +45,12 @@ def main() -> None:
 
     # 2. Launch UI
     try:
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("bereeze.footwear.pos.1.0")
+        except Exception:
+            pass
+
         from pos_billing.ui.login_frame import LoginFrame
         app = LoginFrame()
         app.mainloop()

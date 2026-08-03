@@ -111,11 +111,27 @@ class MainFrame(tk.Toplevel):
 
     def _build_sidebar(self) -> None:
         # App logo area
+        logo_loaded = False
+        try:
+            import os
+            from PIL import Image, ImageTk
+            from .widgets import _ICON_PNG
+            if os.path.exists(_ICON_PNG):
+                img = Image.open(_ICON_PNG).convert("RGBA")
+                img_resized = img.resize((64, 64), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img_resized)
+                lbl_logo = tk.Label(self._sidebar, image=photo, bg=SECONDARY_COLOR)
+                lbl_logo._photo = photo
+                lbl_logo.pack(pady=(12, 4))
+                logo_loaded = True
+        except Exception:
+            logo_loaded = False
+
         tk.Label(
-            self._sidebar, text="BEREEZE\nFOOTWEAR\nFANCY",
+            self._sidebar, text="BEREEZE\nFOOTWEAR FANCY",
             font=("Segoe UI", 10, "bold"),
             bg=SECONDARY_COLOR, fg=TEXT_ON_PRIMARY,
-            pady=16,
+            pady=4 if logo_loaded else 16,
         ).pack(fill=tk.X)
 
         tk.Frame(self._sidebar, bg=BORDER_COLOR, height=1).pack(fill=tk.X)
@@ -232,6 +248,12 @@ class MainFrame(tk.Toplevel):
 
     def _confirm_exit(self) -> None:
         if messagebox.askyesno("Exit", "Exit the POS system?", parent=self):
+            try:
+                from ..utils.auto_save_manager import auto_save_database, auto_save_daily_excel
+                auto_save_database(prefix="exit")
+                auto_save_daily_excel()
+            except Exception:
+                pass
             self.destroy()
             if self._on_logout_cb:
                 self._on_logout_cb()

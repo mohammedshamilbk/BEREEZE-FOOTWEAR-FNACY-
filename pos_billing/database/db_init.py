@@ -185,6 +185,33 @@ CREATE TABLE IF NOT EXISTS audit_log (
     newValue   TEXT,
     actionDate TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS game_station (
+    station_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    station_name  TEXT NOT NULL UNIQUE,
+    station_type  TEXT NOT NULL DEFAULT 'CONSOLE',
+    hourly_rate   REAL NOT NULL DEFAULT 100.0,
+    status        TEXT NOT NULL DEFAULT 'AVAILABLE',
+    current_session_id INTEGER DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS game_session (
+    session_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    station_id       INTEGER NOT NULL,
+    customer_id      INTEGER NOT NULL,
+    customer_name    TEXT NOT NULL,
+    start_time       TEXT NOT NULL DEFAULT (datetime('now')),
+    end_time         TEXT,
+    duration_minutes REAL DEFAULT 0,
+    rate_per_hour    REAL NOT NULL,
+    total_amount     REAL DEFAULT 0,
+    paid_amount      REAL DEFAULT 0,
+    payment_mode     TEXT DEFAULT '',
+    status           TEXT NOT NULL DEFAULT 'ACTIVE',
+    user_id          INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (station_id) REFERENCES game_station(station_id),
+    FOREIGN KEY (customer_id) REFERENCES customer(customerId)
+);
 """
 
 _SEED_SQL = """
@@ -208,6 +235,14 @@ INSERT OR IGNORE INTO customer
 VALUES
     ('CUST001','Raj Kumar',  '9876543210','raj@email.com',  '123 Main St','Delhi', '110001',50000),
     ('CUST002','Priya Singh','9876543211','priya@email.com','456 Oak Ave', 'Mumbai','400001',75000);
+
+INSERT OR IGNORE INTO game_station (station_id, station_name, station_type, hourly_rate, status)
+VALUES
+    (1, 'Station 01 - PS5 VR', 'VR_CONSOLE', 150.0, 'AVAILABLE'),
+    (2, 'Station 02 - Xbox Series X', 'CONSOLE', 120.0, 'AVAILABLE'),
+    (3, 'Station 03 - Gaming PC Ultra', 'PC', 100.0, 'AVAILABLE'),
+    (4, 'Station 04 - Racing Simulator', 'SIMULATOR', 200.0, 'AVAILABLE');
+
 """
 
 

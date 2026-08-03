@@ -12,6 +12,7 @@ from tkinter import messagebox, ttk
 from ...database import dao
 from ...database.models import Bill, BillItem, User
 from ...payment.payment_method import PaymentProcessor
+from ...utils import save_draft_cart, load_draft_cart, clear_draft_cart
 from ..constants import (
     APP_BACKGROUND, BORDER_COLOR, DANGER_COLOR, DARK_COLOR,
     HEADING_FONT, NORMAL_FONT, PRIMARY_COLOR, SMALL_FONT,
@@ -279,9 +280,30 @@ class POSSaleFrame(tk.Frame):
         if hasattr(self, "_item_disc_entry"):
             self._item_disc_entry.delete(0, tk.END)
             self._item_disc_entry.insert(0, "0")
+
+        # Auto-restore pending draft cart if available
+        draft = load_draft_cart()
+        if draft and isinstance(draft, dict) and draft.get("items"):
+            for idict in draft.get("items", []):
+                bi = BillItem(
+                    bill_id=0,
+                    item_id=idict.get("item_id", 0),
+                    item_code=idict.get("item_code", "ITEM"),
+                    item_name=idict.get("item_name", "Item"),
+                    quantity=idict.get("quantity", 1),
+                    unit_price=float(idict.get("unit_price", 0.0)),
+                    discount=float(idict.get("discount", 0.0)),
+                )
+                bi.purchase_price = float(idict.get("purchase_price", 0.0))
+                bi.calculate_amount()
+                self._current_bill.bill_items.append(bi)
+            if draft.get("customer_name"):
+                self._customer_var.set(draft["customer_name"])
+
         self._refresh_table()
 
     def _clear_bill(self) -> None:
+        clear_draft_cart()
         if self._current_bill:
             self._current_bill.bill_items.clear()
             if hasattr(self, "_bill_disc_entry"):
@@ -578,6 +600,7 @@ class POSSaleFrame(tk.Frame):
 
         # Save to DB
         dao.save_bill(self._current_bill)
+        clear_draft_cart()
 
         # Print receipt to console (mirrors Bill.printBill)
         self._current_bill.print_bill()
@@ -679,6 +702,29 @@ class POSSaleFrame(tk.Frame):
             self._balance_var.set(f"Change: ₹ {change:,.2f}")
         else:
             self._balance_var.set(f"₹ 0.00")
+
+        # Auto-save draft cart for recovery
+        if self._current_bill and self._current_bill.bill_items:
+            cart_data = {
+                "bill_no": self._current_bill.bill_number,
+                "customer_name": self._current_bill.customer_name or "Walk-In Customer",
+                "items": [
+                    {
+                        "item_id": bi.item_id,
+                        "item_code": bi.item_code,
+                        "item_name": bi.item_name,
+                        "quantity": bi.quantity,
+                        "unit_price": bi.unit_price,
+                        "discount": bi.discount,
+                        "purchase_price": getattr(bi, "purchase_price", 0.0),
+                        "total_amount": bi.total_amount
+                    }
+                    for bi in self._current_bill.bill_items
+                ]
+            }
+            save_draft_cart(cart_data)
+        else:
+            clear_draft_cart()
 
 
 class _EditCartItemDialog(tk.Toplevel):

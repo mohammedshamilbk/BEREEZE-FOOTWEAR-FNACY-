@@ -141,6 +141,31 @@ def generate_upi_qr(
     return img, upi_uri, upi_id
 
 
+def generate_upi_qr_data_url(vpa: str, payee_name: str, amount: float) -> str:
+    """Generate base64 PNG data URL string for dynamic UPI QR Code."""
+    import base64
+    import io
+    import qrcode
+
+    query_params = {
+        "pa": vpa,
+        "pn": payee_name,
+        "am": f"{max(0.0, float(amount)):.2f}",
+        "cu": "INR",
+    }
+    upi_uri = f"upi://pay?{urllib.parse.urlencode(query_params)}"
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=2)
+    qr.add_data(upi_uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0F172A", back_color="white")
+    
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/png;base64,{b64_str}"
+
+
+
 def get_receipt_qr_image(
     payment_mode: str,
     amount: float,

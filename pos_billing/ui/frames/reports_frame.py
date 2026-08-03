@@ -14,6 +14,7 @@ from typing import Dict, List, Any
 
 from ...database import dao
 from ...database.models import User, Bill
+from ...utils import excel_exporter
 from ..constants import (
     APP_BACKGROUND, BORDER_COLOR, DARK_COLOR, HEADING_FONT,
     NORMAL_FONT, PRIMARY_COLOR, SECONDARY_COLOR, SMALL_FONT,
@@ -494,12 +495,18 @@ class ReportsFrame(tk.Frame):
         )
 
         create_button(filt, "🔍 Apply Filter", command=self._apply_filter).pack(
-            side=tk.LEFT, padx=8
+            side=tk.LEFT, padx=4
+        )
+        create_success_button(filt, "📊 Export to Excel", command=self._export_excel).pack(
+            side=tk.LEFT, padx=4
+        )
+        create_button(filt, "📅 Save All Days to Excel", command=self._export_all_days_excel).pack(
+            side=tk.LEFT, padx=4
         )
         create_button(filt, "📥 Export CSV", command=self._export_csv).pack(
             side=tk.LEFT, padx=4
         )
-        create_success_button(filt, "👁️ View Selected Date Bills", command=self._view_selected_date_bills).pack(
+        create_secondary_button(filt, "👁️ View Selected Date Bills", command=self._view_selected_date_bills).pack(
             side=tk.LEFT, padx=4
         )
 
@@ -809,6 +816,7 @@ class ReportsFrame(tk.Frame):
 
     # ── Table Renderer Helper ──────────────────────────────────────────────
     def _render_table(self, cols: list, rows: list) -> None:
+        self._current_headers = [c[2] for c in cols]
         tbl_frame = tk.Frame(self._content_container, bg=APP_BACKGROUND)
         tbl_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -845,7 +853,7 @@ class ReportsFrame(tk.Frame):
         tree.bind("<Return>", _on_table_action)
         self._current_tree = tree
 
-    # ── Date Filter & CSV Export Helpers ────────────────────────────────────
+    # ── Date Filter & Excel / CSV Export Helpers ────────────────────────────────────
     def _filtered_bills(self) -> List[Bill]:
         try:
             from_dt = datetime.strptime(self._from_var.get().strip(), "%Y-%m-%d")
@@ -875,6 +883,66 @@ class ReportsFrame(tk.Frame):
             if from_dt <= b_dt <= to_dt and b.status == "COMPLETED":
                 filtered.append(b)
         return filtered
+
+    def _export_excel(self) -> None:
+        """Export current active report tab data to Excel (.xlsx)."""
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Files (*.xlsx)", "*.xlsx"), ("CSV Files (*.csv)", "*.csv")],
+            title=f"Export {self._current_tab.upper()} Report to Excel",
+            initialfile=f"report_{self._current_tab}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        )
+        if not path:
+            return
+        try:
+            tab_titles = {
+                "pnl": "Profit & Loss Daily Report",
+                "sales": "Daily Sales Revenue Summary",
+                "bills": "Bills Master Log",
+                "inventory": "Inventory Stock Report"
+            }
+            title = tab_titles.get(self._current_tab, "Report Data")
+            headers = getattr(self, "_current_headers", ["Col1", "Col2", "Col3"])
+            summary = self._summary_var.get()
+            out_path = excel_exporter.export_table_to_excel(
+                filepath=path,
+                title=title,
+                headers=headers,
+                rows=self._current_data,
+                sheet_name=self._current_tab.upper(),
+                summary_text=summary
+            )
+            messagebox.showinfo("Export Successful", f"Report saved successfully to:\n{out_path}", parent=self)
+        except Exception as exc:
+            logger.error("Excel export error: %s", exc)
+            messagebox.showerror("Export Error", f"Could not export report: {exc}", parent=self)
+
+    def _export_all_days_excel(self) -> None:
+        """Export EVERY DAY's sales report, bills log, expenses, and inventory to a multi-sheet Excel Workbook."""
+        from_d = self._from_var.get().strip()
+        to_d = self._to_var.get().strip()
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Files (*.xlsx)", "*.xlsx"), ("CSV Files (*.csv)", "*.csv")],
+            title="Save Every Day's Sales to Excel Workbook",
+            initialfile=f"all_days_sales_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        )
+        if not path:
+            return
+        try:
+            out_path = excel_exporter.export_all_days_sales_to_excel(
+                filepath=path,
+                from_date=from_d,
+                to_date=to_d
+            )
+            messagebox.showinfo(
+                "Export Complete",
+                f"Every day's sales report, bills log, expenses, and inventory have been saved to Excel:\n\n{out_path}",
+                parent=self
+            )
+        except Exception as exc:
+            logger.error("All days export error: %s", exc)
+            messagebox.showerror("Export Error", f"Could not export all days to Excel: {exc}", parent=self)
 
     def _export_csv(self) -> None:
         path = filedialog.asksaveasfilename(
@@ -993,7 +1061,8 @@ class _DailyBillsDialog(tk.Toplevel):
         btn_box.pack(fill=tk.X)
 
         create_success_button(btn_box, "👁️ View & Print Selected Receipt", command=self._open_selected_bill).pack(side=tk.LEFT, padx=(0, 8))
-        create_button(btn_box, "📥 Export CSV", command=self._export_csv).pack(side=tk.LEFT, padx=8)
+        create_button(btn_box, "📊 Export to Excel", command=self._export_excel).pack(side=tk.LEFT, padx=4)
+        create_button(btn_box, "📥 Export CSV", command=self._export_csv).pack(side=tk.LEFT, padx=4)
         create_secondary_button(btn_box, "✖ Close", command=self.destroy).pack(side=tk.RIGHT)
 
     def _get_selected_bill_no(self) -> Optional[str]:
@@ -1018,6 +1087,31 @@ class _DailyBillsDialog(tk.Toplevel):
             _ReceiptDlg(self, bill)
         else:
             messagebox.showerror("Error", f"Bill '{bill_no}' not found.", parent=self)
+
+    def _export_excel(self) -> None:
+        if not self._tree:
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Files (*.xlsx)", "*.xlsx"), ("CSV Files (*.csv)", "*.csv")],
+            title=f"Export Bills for {self.date_str} to Excel",
+            initialfile=f"bills_{self.date_str}.xlsx"
+        )
+        if not path:
+            return
+        try:
+            headers = ["Bill No", "Date / Time", "Customer", "Amount (₹)", "Payment Mode", "Status"]
+            rows = [self._tree.item(item_id, "values") for item_id in self._tree.get_children()]
+            out_path = excel_exporter.export_table_to_excel(
+                filepath=path,
+                title=f"Bills for Date {self.date_str}",
+                headers=headers,
+                rows=rows,
+                sheet_name="Daily Bills"
+            )
+            messagebox.showinfo("Exported", f"Bills for {self.date_str} exported successfully to:\n{out_path}", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Export Error", str(exc), parent=self)
 
     def _export_csv(self) -> None:
         if not self._tree:

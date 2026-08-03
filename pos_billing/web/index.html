@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bereeze Footwear Fancy — Enterprise Cloud POS</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Login Modal -->
+  <div id="login-modal" class="modal-overlay active">
+    <div class="modal-card">
+      <h2 style="margin-bottom: 0.5rem; text-align: center;">👟 Bereeze Cloud POS</h2>
+      <p style="color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; font-size: 0.9rem;">
+        Log in to access centralized real-time store & session data.
+      </p>
+      <form id="login-form" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div>
+          <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Username</label>
+          <input type="text" id="login-username" class="form-control" placeholder="admin" required value="admin">
+        </div>
+        <div>
+          <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Password</label>
+          <input type="password" id="login-password" class="form-control" placeholder="admin123" required value="admin123">
+        </div>
+        <div id="login-error" style="color: var(--accent-danger); font-size: 0.85rem; display: none;"></div>
+        <button type="submit" class="btn btn-primary" style="justify-content: center; width: 100%; margin-top: 0.5rem;">
+          Sign In to Cloud POS
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- App Main Shell -->
+  <div id="app-container" style="display: none;">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="brand-header">
+        <div class="brand-logo">👟</div>
+        <div>
+          <div class="brand-title">Bereeze POS</div>
+          <div class="brand-sub">CLOUD ENTERPRISE</div>
+        </div>
+      </div>
+      <ul class="nav-list">
+        <li class="nav-item active" data-view="dashboard">
+          <span class="nav-icon">📊</span> Dashboard
+        </li>
+        <li class="nav-item" data-view="stations">
+          <span class="nav-icon">🎮</span> Stations & Check-In
+        </li>
+        <li class="nav-item" data-view="pos">
+          <span class="nav-icon">🛒</span> POS Billing
+        </li>
+        <li class="nav-item" data-view="customers">
+          <span class="nav-icon">👥</span> Customers
+        </li>
+        <li class="nav-item" data-view="inventory">
+          <span class="nav-icon">📦</span> Inventory
+        </li>
+        <li class="nav-item" data-view="expenses">
+          <span class="nav-icon">💸</span> Expenses
+        </li>
+        <li class="nav-item" data-view="reports">
+          <span class="nav-icon">📈</span> Reports & Exports
+        </li>
+        <li class="nav-item" data-view="audit">
+          <span class="nav-icon">🔒</span> Security Audit
+        </li>
+      </ul>
+      <div class="user-profile-widget">
+        <div class="profile-info">
+          <span class="profile-name" id="user-display-name">Admin User</span>
+          <span class="profile-role" id="user-display-role">ADMIN</span>
+        </div>
+        <button class="btn-logout" id="btn-logout-trigger" title="Logout">🚪</button>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-wrapper">
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div class="view-title" id="current-view-title">Dashboard Overview</div>
+        <div class="status-badge-container">
+          <div class="status-badge" id="status-badge">
+            <span class="status-dot"></span>
+            <span id="status-text">Live Cloud Sync Active</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Viewports -->
+      <div class="content-viewport">
+        <!-- Dashboard View -->
+        <div id="view-dashboard" class="view-section">
+          <div class="grid-kpi">
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span>TODAY'S REVENUE</span>
+                <span>₹</span>
+              </div>
+              <div class="kpi-value" id="kpi-today-rev">₹ 0.00</div>
+              <div class="kpi-subtext" id="kpi-bills-count">0 Completed Bills</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span>ACTIVE STATIONS / PLAYERS</span>
+                <span>🎮</span>
+              </div>
+              <div class="kpi-value" id="kpi-occupied-stations">0 / 4</div>
+              <div class="kpi-subtext" style="color: var(--accent-primary);" id="kpi-available-stations">4 Stations Available</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span>TODAY'S EXPENSES</span>
+                <span>💸</span>
+              </div>
+              <div class="kpi-value" id="kpi-today-exp" style="color: var(--accent-danger);">₹ 0.00</div>
+              <div class="kpi-subtext" style="color: var(--text-muted);">Store Operating Outflow</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span>NET PROFIT</span>
+                <span>📈</span>
+              </div>
+              <div class="kpi-value" id="kpi-net-profit">₹ 0.00</div>
+              <div class="kpi-subtext" id="kpi-yesterday-comp">Vs Yesterday Revenue: ₹ 0.00</div>
+            </div>
+          </div>
+
+          <h3 style="margin-bottom: 1rem;">Active Live Sessions & Timers</h3>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Session ID</th>
+                  <th>Station</th>
+                  <th>Customer</th>
+                  <th>Start Time</th>
+                  <th>Hourly Rate</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="active-sessions-table">
+                <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No active sessions currently running.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Game Stations View -->
+        <div id="view-stations" class="view-section" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3>Game Stations & Rental Counters</h3>
+            <button class="btn btn-primary" onclick="openCheckinModal()">+ Check-In Customer</button>
+          </div>
+          <div class="grid-kpi" id="stations-grid">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- POS Billing View -->
+        <div id="view-pos" class="view-section" style="display: none;">
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+            <div>
+              <h3>Product Catalogue & Item Search</h3>
+              <input type="text" id="pos-search-input" class="form-control" placeholder="Search by product name, code, or barcode..." style="margin: 1rem 0;">
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Product Name</th>
+                      <th>Price</th>
+                      <th>Stock</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pos-inventory-table"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Cart Section -->
+            <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 1.5rem; display: flex; flex-direction: column;">
+              <h3 style="margin-bottom: 1rem;">Cart Order</h3>
+              <div id="pos-cart-items" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; max-height: 350px;">
+                <p style="color: var(--text-muted); text-align: center;">Cart is empty</p>
+              </div>
+              <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 1rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                  <span>Total Amount</span>
+                  <span id="pos-cart-total" style="font-weight: 700; font-size: 1.4rem; color: var(--accent-success);">₹ 0.00</span>
+                </div>
+                <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="handlePosCheckout()">Proceed to Checkout & UPI QR</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Customers View -->
+        <div id="view-customers" class="view-section" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3>Customer Directory</h3>
+            <button class="btn btn-primary" onclick="openNewCustomerModal()">+ Register Customer</button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Credit Limit</th>
+                  <th>Outstanding</th>
+                  <th>Loyalty Points</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="customers-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Inventory View -->
+        <div id="view-inventory" class="view-section" style="display: none;">
+          <h3>Inventory Product Master</h3>
+          <div class="table-container" style="margin-top: 1rem;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Product Name</th>
+                  <th>Category</th>
+                  <th>Purchase Price</th>
+                  <th>Selling Price</th>
+                  <th>Stock Quantity</th>
+                  <th>Reorder Level</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Expenses View -->
+        <div id="view-expenses" class="view-section" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3>Store Operating Expenses</h3>
+            <button class="btn btn-primary" onclick="openExpenseModal()">+ Add Expense Outflow</button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th>Amount</th>
+                  <th>Payment Mode</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="expenses-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Reports View -->
+        <div id="view-reports" class="view-section" style="display: none;">
+          <h3>Reports & Financial Summaries</h3>
+          <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button class="btn btn-primary" onclick="window.location.href='/api/v1/reports/export/excel'">📥 Download Multi-Tab Excel Workbook</button>
+          </div>
+        </div>
+
+        <!-- Audit Log View -->
+        <div id="view-audit" class="view-section" style="display: none;">
+          <h3>Security & Audit Trail Logs</h3>
+          <div class="table-container" style="margin-top: 1rem;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Log ID</th>
+                  <th>User ID</th>
+                  <th>Action</th>
+                  <th>Table</th>
+                  <th>Record ID</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Dynamic Modal Overlay for Actions -->
+  <div id="action-modal" class="modal-overlay">
+    <div class="modal-card">
+      <h3 id="modal-title" style="margin-bottom: 1rem;">Modal Title</h3>
+      <div id="modal-body"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1.5rem;">
+        <button class="btn" style="background: var(--border-color); color: var(--text-main);" onclick="closeActionModal()">Cancel</button>
+        <button class="btn btn-primary" id="modal-submit-btn">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Popup Modal -->
+  <div id="qr-modal" class="modal-overlay">
+    <div class="modal-card" style="text-align: center;">
+      <h3>Dynamic UPI QR Code</h3>
+      <p style="color: var(--text-muted); margin-bottom: 1rem;">Scan to pay locked exact bill amount</p>
+      <img id="upi-qr-image" src="" alt="UPI QR Code" style="max-width: 250px; border-radius: var(--radius-md); border: 2px solid var(--border-color);">
+      <h2 id="upi-qr-amount" style="margin-top: 1rem; color: var(--accent-success);">₹ 0.00</h2>
+      <button class="btn btn-primary" style="margin-top: 1.5rem; width: 100%; justify-content: center;" onclick="closeQRModal()">Close Receipt</button>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/websocket.js"></script>
+  <script src="/js/offline_store.js"></script>
+
+  <script>
+    // Frontend View Controller Logic
+    let currentCart = [];
+    let allInventory = [];
+    let allCustomersList = [];
+
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration error:', err));
+    }
+
+    // App Startup
+    document.addEventListener("DOMContentLoaded", () => {
+      const user = api.getUser();
+      if (user) {
+        showAppShell(user);
+      } else {
+        document.getElementById("login-modal").classList.add("active");
+      }
+
+      // Login Form Listener
+      document.getElementById("login-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const u = document.getElementById("login-username").value.trim();
+        const p = document.getElementById("login-password").value.trim();
+        const errDiv = document.getElementById("login-error");
+        try {
+          const res = await api.login(u, p);
+          errDiv.style.display = "none";
+          showAppShell(res.user);
+        } catch (err) {
+          errDiv.innerText = err.message;
+          errDiv.style.display = "block";
+        }
+      });
+
+      // Logout Listener
+      document.getElementById("btn-logout-trigger").addEventListener("click", () => {
+        api.clearSession();
+        window.location.reload();
+      });
+
+      // Nav View Switcher
+      document.querySelectorAll(".nav-item").forEach(item => {
+        item.addEventListener("click", () => {
+          document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+          item.classList.add("active");
+          const view = item.dataset.view;
+          switchView(view);
+        });
+      });
+
+      // Subscribe WebSocket updates
+      wsClient.subscribe((msg) => {
+        if (["CUSTOMER_CHECKIN", "CUSTOMER_CHECKOUT", "BILL_CREATED", "EXPENSE_ADDED"].includes(msg.event)) {
+          loadDashboardData();
+        }
+      });
+    });
+
+    function showAppShell(user) {
+      document.getElementById("login-modal").classList.remove("active");
+      document.getElementById("app-container").style.display = "flex";
+      document.getElementById("user-display-name").innerText = user.full_name || user.username;
+      document.getElementById("user-display-role").innerText = user.role;
+      wsClient.connect();
+      loadDashboardData();
+    }
+
+    function switchView(viewName) {
+      document.querySelectorAll(".view-section").forEach(v => v.style.display = "none");
+      const target = document.getElementById(`view-${viewName}`);
+      if (target) target.style.display = "block";
+
+      const titleMap = {
+        dashboard: "Dashboard Overview",
+        stations: "Game Stations & Check-In",
+        pos: "POS Sale Terminal",
+        customers: "Customer Directory",
+        inventory: "Product Master Inventory",
+        expenses: "Store Expense Outflow",
+        reports: "Reports & Financial Summaries",
+        audit: "Security Audit Trail"
+      };
+      document.getElementById("current-view-title").innerText = titleMap[viewName] || "Overview";
+
+      if (viewName === "dashboard") loadDashboardData();
+      if (viewName === "stations") loadStationsData();
+      if (viewName === "pos") loadPosData();
+      if (viewName === "customers") loadCustomersData();
+      if (viewName === "inventory") loadInventoryData();
+      if (viewName === "expenses") loadExpensesData();
+      if (viewName === "audit") loadAuditData();
+    }
+
+    async function loadDashboardData() {
+      try {
+        const stats = await api.getDashboardStats();
+        document.getElementById("kpi-today-rev").innerText = `₹ ${stats.today_revenue.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+        document.getElementById("kpi-bills-count").innerText = `${stats.today_bills} Completed Bills`;
+        document.getElementById("kpi-occupied-stations").innerText = `${stats.occupied_stations} Occupied`;
+        document.getElementById("kpi-available-stations").innerText = `${stats.available_stations} Stations Available`;
+        document.getElementById("kpi-today-exp").innerText = `₹ ${stats.today_expenses.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+        document.getElementById("kpi-net-profit").innerText = `₹ ${stats.today_profit.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+        document.getElementById("kpi-yesterday-comp").innerText = `Vs Yesterday Rev: ₹ ${stats.yesterday_revenue.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+
+        const activeSessions = await api.getActiveSessions();
+        const tbody = document.getElementById("active-sessions-table");
+        if (activeSessions.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No active sessions currently running.</td></tr>`;
+        } else {
+          tbody.innerHTML = activeSessions.map(s => `
+            <tr>
+              <td>#${s.session_id}</td>
+              <td><strong>${s.station_name}</strong></td>
+              <td>${s.customer_name}</td>
+              <td>${s.start_time}</td>
+              <td>₹ ${s.rate_per_hour}/hr</td>
+              <td><span style="color: var(--accent-warning); font-weight: 600;">ACTIVE</span></td>
+              <td><button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.8rem;" onclick="checkoutSession(${s.session_id})">Check Out</button></td>
+            </tr>
+          `).join("");
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function loadStationsData() {
+      const stations = await api.getStations();
+      const grid = document.getElementById("stations-grid");
+      grid.innerHTML = stations.map(st => `
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span>${st.station_name}</span>
+            <span style="color: ${st.status === 'AVAILABLE' ? 'var(--accent-success)' : 'var(--accent-warning)'}">${st.status}</span>
+          </div>
+          <div class="kpi-value" style="font-size: 1.2rem;">₹ ${st.hourly_rate} / hr</div>
+          <div style="margin-top: 10px;">
+            ${st.status === 'AVAILABLE' ? 
+              `<button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="openCheckinForStation(${st.station_id})">Check-In</button>` :
+              `<button class="btn btn-danger" style="width: 100%; justify-content: center;" onclick="checkoutSession(${st.current_session_id})">End Session</button>`}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function checkoutSession(sessionId) {
+      if (!confirm("Are you sure you want to end this session and check out?")) return;
+      try {
+        const res = await api.checkoutSession(sessionId, "CASH");
+        alert(`Session ended. Total bill amount: ₹ ${res.total_amount.toFixed(2)}`);
+        loadDashboardData();
+        loadStationsData();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function loadPosData() {
+      allInventory = await api.getInventory();
+      allCustomersList = await api.getCustomers();
+      renderPosTable(allInventory);
+
+      document.getElementById("pos-search-input").oninput = (e) => {
+        const q = e.target.value.toLowerCase();
+        const filtered = allInventory.filter(i => 
+          i.item_name.toLowerCase().includes(q) || 
+          i.item_code.toLowerCase().includes(q) || 
+          (i.barcode && i.barcode.toLowerCase().includes(q))
+        );
+        renderPosTable(filtered);
+      };
+    }
+
+    function renderPosTable(items) {
+      const tbody = document.getElementById("pos-inventory-table");
+      tbody.innerHTML = items.map(i => `
+        <tr>
+          <td>${i.item_code}</td>
+          <td><strong>${i.item_name}</strong></td>
+          <td>₹ ${i.selling_price.toFixed(2)}</td>
+          <td>${i.stock_quantity}</td>
+          <td><button class="btn btn-primary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="addToCart(${i.item_id})">+ Add</button></td>
+        </tr>
+      `).join("");
+    }
+
+    function addToCart(itemId) {
+      const item = allInventory.find(i => i.item_id === itemId);
+      if (!item) return;
+      const existing = currentCart.find(c => c.item_id === itemId);
+      if (existing) {
+        existing.quantity++;
+      } else {
+        currentCart.push({ ...item, quantity: 1 });
+      }
+      renderCart();
+    }
+
+    function renderCart() {
+      const container = document.getElementById("pos-cart-items");
+      if (currentCart.length === 0) {
+        container.innerHTML = `<p style="color: var(--text-muted); text-align: center;">Cart is empty</p>`;
+        document.getElementById("pos-cart-total").innerText = "₹ 0.00";
+        return;
+      }
+      let total = 0;
+      container.innerHTML = currentCart.map(c => {
+        const lineTotal = c.selling_price * c.quantity;
+        total += lineTotal;
+        return `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-primary); padding: 8px; border-radius: var(--radius-md);">
+            <div>
+              <div style="font-weight: 600; font-size: 0.85rem;">${c.item_name}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">₹ ${c.selling_price} x ${c.quantity}</div>
+            </div>
+            <div style="font-weight: 700; color: var(--accent-success);">₹ ${lineTotal.toFixed(2)}</div>
+          </div>
+        `;
+      }).join("");
+      document.getElementById("pos-cart-total").innerText = `₹ ${total.toFixed(2)}`;
+    }
+
+    async function handlePosCheckout() {
+      if (currentCart.length === 0) {
+        alert("Cart is empty!");
+        return;
+      }
+      const total = currentCart.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
+      const custId = allCustomersList.length > 0 ? allCustomersList[0].customer_id : 1;
+
+      try {
+        const payload = {
+          customer_id: custId,
+          bill_type: "SALES",
+          bill_items: currentCart.map(c => ({
+            item_id: c.item_id,
+            quantity: c.quantity,
+            unit_price: c.selling_price,
+            discount: 0.0
+          })),
+          subtotal: total,
+          total_discount: 0.0,
+          total_amount: total,
+          paid_amount: total,
+          payment_mode: "UPI"
+        };
+
+        const res = await api.checkoutPOS(payload);
+        currentCart = [];
+        renderCart();
+
+        // Get UPI QR
+        const qrRes = await api.getUPIQR(total);
+        document.getElementById("upi-qr-image").src = qrRes.qr_code;
+        document.getElementById("upi-qr-amount").innerText = `₹ ${total.toFixed(2)}`;
+        document.getElementById("qr-modal").classList.add("active");
+        loadDashboardData();
+      } catch (err) {
+        alert("Checkout failed: " + err.message);
+      }
+    }
+
+    function closeQRModal() {
+      document.getElementById("qr-modal").classList.remove("active");
+    }
+
+    async function loadCustomersData() {
+      const customers = await api.getCustomers();
+      const tbody = document.getElementById("customers-table-body");
+      tbody.innerHTML = customers.map(c => `
+        <tr>
+          <td>${c.customer_code}</td>
+          <td><strong>${c.customer_name}</strong></td>
+          <td>${c.phone}</td>
+          <td>₹ ${c.credit_limit.toFixed(2)}</td>
+          <td style="color: var(--accent-danger);">₹ ${c.outstanding_amount.toFixed(2)}</td>
+          <td>${c.loyalty_points.toFixed(1)} pts</td>
+          <td><span style="color: var(--accent-success);">${c.status}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadInventoryData() {
+      const items = await api.getInventory();
+      const tbody = document.getElementById("inventory-table-body");
+      tbody.innerHTML = items.map(i => `
+        <tr>
+          <td>${i.item_code}</td>
+          <td><strong>${i.item_name}</strong></td>
+          <td>${i.category}</td>
+          <td>₹ ${i.purchase_price.toFixed(2)}</td>
+          <td>₹ ${i.selling_price.toFixed(2)}</td>
+          <td style="font-weight: 700; color: ${i.stock_quantity <= i.reorder_level ? 'var(--accent-danger)' : 'var(--text-main)'}">${i.stock_quantity}</td>
+          <td>${i.reorder_level}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadExpensesData() {
+      const exp = await api.getExpenses();
+      const tbody = document.getElementById("expenses-table-body");
+      tbody.innerHTML = exp.map(e => `
+        <tr>
+          <td>#${e.expense_id}</td>
+          <td>${e.category}</td>
+          <td>${e.description}</td>
+          <td style="color: var(--accent-danger); font-weight: 600;">₹ ${e.amount.toFixed(2)}</td>
+          <td>${e.payment_mode}</td>
+          <td>${e.expense_date}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadAuditData() {
+      const logs = await api.getAuditLogs();
+      const tbody = document.getElementById("audit-table-body");
+      tbody.innerHTML = logs.map(l => `
+        <tr>
+          <td>#${l.log_id}</td>
+          <td>User #${l.user_id || 1}</td>
+          <td><strong>${l.action}</strong></td>
+          <td>${l.table_name}</td>
+          <td>Record #${l.record_id}</td>
+          <td>${l.action_date}</td>
+        </tr>
+      `).join("");
+    }
+
+    function closeActionModal() {
+      document.getElementById("action-modal").classList.remove("active");
+    }
+  </script>
+</body>
+</html>

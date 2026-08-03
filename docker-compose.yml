@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: bereeze_pos_app
+    restart: always
+    environment:
+      - ENV=production
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY:-bereeze_cloud_super_secret_jwt_key_2026}
+      - DATABASE_URL=postgresql://bereeze_user:bereeze_password@postgres:5432/bereeze_pos_db
+      - STORE_VPA=bereezefootwear@upi
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: bereeze_pos_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: bereeze_user
+      POSTGRES_PASSWORD: bereeze_password
+      POSTGRES_DB: bereeze_pos_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bereeze_user -d bereeze_pos_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bereeze_pos_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  nginx:
+    image: nginx:alpine
+    container_name: bereeze_pos_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
